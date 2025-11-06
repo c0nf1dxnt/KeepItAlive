@@ -2,6 +2,7 @@ package pro.keepitalive.service;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.scheduling.annotation.Scheduled;
 import pro.keepitalive.Website;
 import pro.keepitalive.repository.WebsiteRepository;
 
@@ -13,6 +14,7 @@ import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 @Service
 @RequiredArgsConstructor
@@ -36,9 +38,23 @@ public class WebsiteService {
     }
 
     public void checkWebsite(Website website) {
+        var url = website.getUrl();
+
+        if (url == null || url.isBlank()) {
+            website.setStatus("DOWN - Empty URL");
+            website.setLastChecked(LocalDateTime.now());
+            websiteRepository.save(website);
+            return;
+        }
+
+        var fullUrl = url;
+        if (!fullUrl.toLowerCase().startsWith("http://") && !fullUrl.toLowerCase().startsWith("https://")) {
+            fullUrl = "https://" + fullUrl;
+        }
+
         try {
             var request = HttpRequest.newBuilder()
-                    .uri(URI.create(website.getUrl()))
+                    .uri(URI.create(fullUrl))
                     .GET()
                     .build();
 
@@ -50,8 +66,8 @@ public class WebsiteService {
                 website.setStatus("DOWN - " + response.statusCode());
             }
 
-        } catch (IOException | InterruptedException e) {
-            website.setStatus("DOWN - " + e.getMessage());
+        } catch (IOException | InterruptedException | IllegalArgumentException e) {
+            website.setStatus("DOWN - " + e.getClass().getSimpleName());
         }
 
         website.setLastChecked(LocalDateTime.now());
@@ -63,5 +79,12 @@ public class WebsiteService {
         for (Website website : websites) {
             checkWebsite(website);
         }
+    }
+
+    @Scheduled(fixedRate = 10, timeUnit = TimeUnit.SECONDS, initialDelay = 5)
+    public void scheduleAllWebsitesCheck() {
+        System.out.println("Running scheduled check...");
+        checkAllWebsites();
+        System.out.println("Scheduled check finished.");
     }
 }
